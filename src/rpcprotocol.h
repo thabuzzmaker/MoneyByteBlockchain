@@ -21,8 +21,15 @@
 #include "json/json_spirit_utils.h"
 #include "json/json_spirit_writer_template.h"
 
+// keep the 1.3.0.5 form for Boost >= 1.66, fall back to get_io_service() for older Boost (MXE Windows build uses 1.60)
+#include <boost/version.hpp>
+#if BOOST_VERSION >= 106600
 #define GetIOService(s) ((boost::asio::io_context&)(s).get_executor().context())
 #define GetIOServiceFromPtr(s) ((boost::asio::io_context&)(s->get_executor().context()))
+#else
+#define GetIOService(s) ((s).get_io_service())
+#define GetIOServiceFromPtr(s) ((s)->get_io_service())
+#endif
 typedef boost::asio::io_service ioContext;
 
 // HTTP status codes

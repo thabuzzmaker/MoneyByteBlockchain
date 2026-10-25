@@ -9,7 +9,10 @@
 #define CLIENT_VERSION_MAJOR       1
 #define CLIENT_VERSION_MINOR       3
 #define CLIENT_VERSION_REVISION    0
-#define CLIENT_VERSION_BUILD       4
+#define CLIENT_VERSION_BUILD       6
+
+// Appended to the version number in the subversion string sent to peers, e.g. " Beta" (empty for a release)
+#define CLIENT_VERSION_TAG         ""
 
 // Set to true for release, false for prerelease or test build
 #define CLIENT_VERSION_IS_RELEASE  true

@@ -766,12 +766,13 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             if(count == -1 && pmn->pubkey == pubkey && !pmn->UpdatedWithin(MASTERNODE_MIN_DSEE_SECONDS)){
                 pmn->UpdateLastSeen();
                 if(pmn->sigTime < sigTime){ //take the newest entry
-                    if (!CheckNode((CAddress)addr)){
+                    { int r = CheckNodeEx((CAddress)addr); // don't judge address families we can't reach (-1 = untestable, keep open)
+                    if (r == 0) {
                         pmn->isPortOpen = false;
-                    } else {
+                    } else if (r == 1) {
                         pmn->isPortOpen = true;
                         addrman.Add(CAddress(addr), pfrom->addr, 2*60*60); // use this as a peer
-                    }
+                    } }
                     LogPrintf("dsee - Got updated entry for %s\n", addr.ToString().c_str());
                     pmn->pubkey2 = pubkey2;
                     pmn->sigTime = sigTime;
@@ -842,11 +843,12 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             CMasternode mn(addr, vin, pubkey, vchSig, sigTime, pubkey2, protocolVersion, rewardAddress, rewardPercentage);
             mn.UpdateLastSeen(lastUpdated);
 
-            if (!CheckNode((CAddress)addr)){
+            { int r = CheckNodeEx((CAddress)addr); // -1 = untestable from here, keep default (open)
+            if (r == 0){
                 mn.ChangePortStatus(false);
-            } else {
+            } else if (r == 1) {
                 addrman.Add(CAddress(addr), pfrom->addr, 2*60*60); // use this as a peer
-            }
+            } }
             
             mn.ChangeNodeStatus(true);
             this->Add(mn);
@@ -974,12 +976,13 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
                 pmn->UpdateLastSeen();
 
                 if(pmn->sigTime < sigTime){ //take the newest entry
-                    if (!CheckNode((CAddress)addr)){
+                    { int r = CheckNodeEx((CAddress)addr); // don't judge address families we can't reach (-1 = untestable, keep open)
+                    if (r == 0) {
                         pmn->isPortOpen = false;
-                    } else {
+                    } else if (r == 1) {
                         pmn->isPortOpen = true;
                         addrman.Add(CAddress(addr), pfrom->addr, 2*60*60); // use this as a peer
-                    }
+                    } }
                     LogPrintf("dsee+ - Got updated entry for %s\n", addr.ToString().c_str());
                     pmn->pubkey2 = pubkey2;
                     pmn->sigTime = sigTime;
@@ -1059,11 +1062,12 @@ void CMasternodeMan::ProcessMessage(CNode* pfrom, std::string& strCommand, CData
             CMasternode mn(addr, vin, pubkey, vchSig, sigTime, pubkey2, protocolVersion, rewardAddress, rewardPercentage);
             mn.UpdateLastSeen(lastUpdated);
 
-            if (!CheckNode((CAddress)addr)){
+            { int r = CheckNodeEx((CAddress)addr); // -1 = untestable from here, keep default (open)
+            if (r == 0){
                 mn.ChangePortStatus(false);
-            } else {
+            } else if (r == 1) {
                 addrman.Add(CAddress(addr), pfrom->addr, 2*60*60); // use this as a peer
-            }
+            } }
             
             mn.ChangeNodeStatus(false);
             this->Add(mn);

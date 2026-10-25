@@ -352,7 +352,7 @@ Value getwork(const Array &params, bool fHelp) {
           throw(JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter"));
         CBlock *pdata = (CBlock *) &vchData[0];
 
-        if(!fNeoScrypt) {
+        { // getwork data is big-endian for both scrypt and NeoScrypt now (see FormatDataBuffer)
             uint i;
             /* nVersion and hashPrevBlock aren't needed */
             for(i = 9; i < 20; i++)

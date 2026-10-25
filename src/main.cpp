@@ -153,7 +153,7 @@ const int GetForkHeightTwo()
 
 const int GetMaxBlockSize()
 {
-    if (pindexBest->nHeight < GetForkHeightTwo())
+    if (pindexBest == NULL || pindexBest->nHeight < GetForkHeightTwo())
     {
         return MAX_BLOCK_SIZE;
     }
@@ -165,7 +165,7 @@ const int GetMaxBlockSize()
     }
     else
     {
-        ret = ((trunc((pindexBest->nHeight / 525,600)) - 3) + 20) * 1000000;
+        ret = ((trunc((pindexBest->nHeight / 525600)) - 3) + 20) * 1000000;
     }
 
     if (ret < 20000000) {
@@ -1942,10 +1942,11 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, MapPrevTx inputs, map<uint256, CTx
 
             if(fValidateSig)
             {
-                // Skip ECDSA signature verification when connecting blocks (fBlock=true)
-                // before the last blockchain checkpoint. This is safe because block merkle hashes are
-                // still computed and checked, and any change will be caught at the next checkpoint.
-                if (!(fBlock && !IsInitialBlockDownload()))
+                // Always verify ECDSA signatures. The previous guard skipped verification
+                // for blocks connected on a fully-synced node (fBlock && !IsInitialBlockDownload()),
+                // which let a peer get a block with forged input signatures accepted once a node
+                // had finished syncing. Verifying unconditionally matches the initial-sync path.
+                if (true)
                 {
                     // Verify signature
                     if (!VerifySignature(txPrev, *this, i, flags, 0))
@@ -2214,6 +2215,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
         int64_t nHeight = pindex->nHeight;
         if (fDevFee(nHeight))
         {
+        // A dev-fee block must carry the dev-fee output in vtx[0].vout[1]; CheckBlock permits a
+        // 1-output coinbase, so guard the access to avoid an out-of-bounds read on a malformed block.
+        if (vtx[0].vout.size() < 2)
+            return DoS(100, error("ConnectBlock() : PoW dev-fee coinbase missing dev-fee output"));
         nReward += nDevFee;
         if (vtx[0].GetValueOut() > nReward)
             return DoS(50, error("ConnectBlock() : coinbase reward exceeded (actual=%d vs calculated=%d)", vtx[0].GetValueOut(), nReward));
@@ -2245,6 +2250,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
         int64_t nHeight = pindex->nHeight;
     		if (fDevFee(nHeight))
       		{
+      	// Guard the vtx[0].vout[1] accesses below: CheckBlock allows a 1-output PoS coinbase,
+      	// so a dev-fee-height block with no dev-fee output would otherwise read out of bounds.
+      	if (vtx[0].vout.size() < 2)
+      	    return DoS(100, error("ConnectBlock() : PoS dev-fee coinbase missing dev-fee output"));
       	if (vtx[0].GetValueOut() > nDevFee)
         	return DoS(50, error("ConnectBlock() : coinbase pays too much (actual=%d vs calculated=%d)", vtx[0].GetValueOut(), nDevFee));
         CBitcoinAddress address(!TestNet() ? FOUNDATION : FOUNDATION_TEST);
@@ -2255,6 +2264,15 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
        if (vtx[0].vout[1].nValue != nDevFee)
           return error("ConnectBlock() : PoS coinbase does not pay enough to dev addresss");
           }
+        else
+        {
+            // On a PoS block that is not a dev-fee block the coinbase (vtx[0]) carries no
+            // reward - the stake is paid in the coinstake (vtx[1]). Without this bound an
+            // attacker could mint arbitrary value into the PoS coinbase (the dev-fee branch
+            // was the only place vtx[0]'s value was ever checked).
+            if (vtx[0].GetValueOut() > 0)
+                return DoS(100, error("ConnectBlock() : PoS coinbase must be empty (actual=%d)", vtx[0].GetValueOut()));
+        }
 
         if (pindex->nHeight >= GetForkHeightOne())
         {
@@ -2326,7 +2344,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
                     }
                 }
                 iWinerAge = iLastPaid;
-                iMidMNCount = (unsigned int)GetMidMasternodesUntilPrev();
+                iMidMNCount = (unsigned int)GetMidMasternodesUntilPrev(pindex->pprev);
 
                 LogPrint("coinstake", "ConnectBlock(): iWinerAge=%u,iMidMNCount=%u,nHeight=%d\n", iWinerAge, iMidMNCount, pindex->nHeight); //for Debug
 
@@ -2919,51 +2937,9 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
             CBlockIndex *pindex = pindexBest;
             if(IsProofOfStake() && pindex != NULL){
                 if(pindex->GetBlockHash() == hashPrevBlock){
-                    // If we don't already have its previous block, skip masternode payment step
-                    CAmount masternodePaymentAmount;
-                    for (int i = vtx[1].vout.size(); i--> 0; ) {
-                        masternodePaymentAmount = vtx[1].vout[i].nValue;
-                        break;
-                    }
-                    bool foundPaymentAmount = false;
-                    bool foundPayee = false;
-                    bool foundPaymentAndPayee = false;
-
-                    CScript payee;
-                    CTxIn vin;
-                    if(!masternodePayments.GetBlockPayee(pindexBest->nHeight+1, payee, vin) || payee == CScript()){
-                        foundPayee = true; //doesn't require a specific payee
-                        foundPaymentAmount = true;
-                        foundPaymentAndPayee = true;
-                        LogPrint("coinstake", "CheckBlock() : Using non-specific masternode payments %d\n", pindexBest->nHeight+1);
-                    }
-
-                    for (unsigned int i = 0; i < vtx[1].vout.size(); i++) {
-                        if (pindex->nHeight >= GetForkHeightOne())
-                        {
-                            // Deviant fix - makes the checks useless because checks are done in the ConnectBlock function
-                            LogPrint("coinstake", "CheckBlock() : payee before - %s, payee after %s", payee.ToString(), vtx[1].vout[i].scriptPubKey.ToString());
-                            payee = vtx[1].vout[i].scriptPubKey;
-                        }
-
-                        if(vtx[1].vout[i].nValue == masternodePaymentAmount )
-                            foundPaymentAmount = true;
-                        if(vtx[1].vout[i].scriptPubKey == payee )
-                            foundPayee = true;
-                        if(vtx[1].vout[i].nValue == masternodePaymentAmount && vtx[1].vout[i].scriptPubKey == payee)
-                            foundPaymentAndPayee = true;
-                    }
-
-                    CTxDestination address1;
-                    ExtractDestination(payee, address1);
-                    CMoneyBytecoinAddress address2(address1);
-
-                    if(!foundPaymentAndPayee) {
-                        LogPrintf("CheckBlock() : Couldn't find masternode payment(%d|%d) or payee(%d|%s) nHeight %d. \n", foundPaymentAmount, masternodePaymentAmount, foundPayee, address2.ToString().c_str(), pindexBest->nHeight+1);
-                        return DoS(100, error("CheckBlock() : Couldn't find masternode payment or payee"));
-                    } else {
-                        LogPrint("coinstake", "CheckBlock() : Found payment(%d|%d) or payee(%d|%s) nHeight %d. \n", foundPaymentAmount, masternodePaymentAmount, foundPayee, address2.ToString().c_str(), pindexBest->nHeight+1);
-                    }
+                    // The masternode payment is validated authoritatively in ConnectBlock().
+                    // The check that used to live here was dead (it reset the expected payee to
+                    // each output in turn, so it always passed) - removed, see finding F-07.
                 } else {
                     LogPrint("coinstake", "CheckBlock() : Skipping masternode payment check - nHeight %d Hash %s\n", pindexBest->nHeight+1, GetHash().ToString().c_str());
                 }
@@ -4483,6 +4459,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         pfrom->AddInventoryKnown(inv);
 
         LOCK(cs_main);
+        // Clear the per-peer ask-for latch now that the block has arrived. Without this the "block"
+        // handler never erased setAskFor (only "tx" and inv-AlreadyHave did), so a block that failed
+        // to process could never be re-requested from the same peer. Mirrors the tx handler.
+        pfrom->setAskFor.erase(inv.hash);
         if (ProcessBlock(pfrom, &block))
             mapAlreadyAskedFor.erase(inv);
         if (block.nDoS) Misbehaving(pfrom->GetId(), block.nDoS);

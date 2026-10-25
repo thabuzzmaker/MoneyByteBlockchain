@@ -31,6 +31,7 @@ enum Network
 
 extern int nConnectTimeout;
 extern bool fNameLookup;
+extern thread_local int nLastConnectError; // errno of the last failed connect(), used by CheckNodeEx()
 
 /** IP address (IPv6, or IPv4 using mapped IPv6 range (::FFFF:0:0/96)) */
 class CNetAddr

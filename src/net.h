@@ -70,6 +70,7 @@ CNode* FindNode(std::string addrName);
 CNode* FindNode(const CService& ip);
 CNode* ConnectNode(CAddress addrConnect, const char *strDest = NULL, bool darkSendMaster=false);
 bool CheckNode(CAddress addrConnect);
+int CheckNodeEx(CAddress addrConnect); // IPv6 reachability: 1 open / 0 closed / -1 untestable
 void MapPort(bool fUseUPnP);
 unsigned short GetListenPort();
 bool BindListenPort(const CService &bindAddr, std::string& strError=REF(std::string()));
@@ -137,6 +138,7 @@ extern uint64_t nLocalServices;
 extern uint64_t nLocalHostNonce;
 extern CAddrMan addrman;
 extern int nMaxConnections;
+extern int nMaxInboundPerIP; // D3
 
 extern std::vector<CNode*> vNodes;
 extern CCriticalSection cs_vNodes;

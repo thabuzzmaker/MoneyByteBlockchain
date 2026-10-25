@@ -6,6 +6,9 @@
 #ifndef BITCOIN_UTIL_H
 #define BITCOIN_UTIL_H
 
+#ifdef WIN32
+#include "compat.h" // util.h uses QueryPerformanceCounter/GetCurrentThread; make the Win32 headers available in every TU
+#endif
 #ifndef WIN32
 #include <sys/types.h>
 #include <sys/time.h>

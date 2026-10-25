@@ -1379,12 +1379,16 @@ void AddTimeData(const CNetAddr& ip, int64_t nTime)
     static CMedianFilter<int64_t> vTimeOffsets(200,0);
     vTimeOffsets.input(nOffsetSample);
     LogPrintf("Added time data, samples %d, offset %+d (%+d minutes)\n", vTimeOffsets.size(), nOffsetSample, nOffsetSample/60);
-    if (vTimeOffsets.size() >= 5 && vTimeOffsets.size() % 2 == 1)
+    // Recompute on every sample once we have enough. The old "size() % 2 == 1" guard meant that
+    // once the filter filled to its (even) capacity it stayed even forever, so nTimeOffset froze
+    // at the value it had one sample before the window filled. median() handles an even count.
+    if (vTimeOffsets.size() >= 5)
     {
         int64_t nMedian = vTimeOffsets.median();
         std::vector<int64_t> vSorted = vTimeOffsets.sorted();
-        // Only let other nodes change our time by so much
-        if (abs64(nMedian) < 70 * 60)
+        // Only let other nodes change our time by so much (tightened from 70 to 30 minutes:
+        // real clocks are NTP-accurate, and a large peer-driven offset skews stake-kernel time).
+        if (abs64(nMedian) < 30 * 60)
         {
             nTimeOffset = nMedian;
         }
@@ -1458,7 +1462,7 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const 
 {
     std::ostringstream ss;
     ss << "/";
-    ss << name << ":" << FormatVersion(nClientVersion);
+    ss << name << ":" << FormatVersion(nClientVersion) << CLIENT_VERSION_TAG;
     if (!comments.empty())
         ss << "(" << boost::algorithm::join(comments, "; ") << ")";
     ss << "/";

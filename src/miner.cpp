@@ -86,11 +86,15 @@ int GetMidMasternodes()
     return iMasternodes;
 }
 
-int GetMidMasternodesUntilPrev()
+int GetMidMasternodesUntilPrev(const CBlockIndex *pAnchor)
 {
     int iMasternodes = 0;
     vector <unsigned int> vecNodes;
-    const CBlockIndex *pBlockCurr = pindexBest;
+    // Score the masternode-count window against the block being connected (pAnchor), not the
+    // global tip (pindexBest). During a normal extend pindexBest == the block's prev, so this is
+    // identical; during a reorg the two differ and using the tip made the same block validate
+    // differently depending on chain state. Fall back to the tip only if no anchor is given.
+    const CBlockIndex *pBlockCurr = pAnchor ? pAnchor : pindexBest;
     if (pBlockCurr)
         pBlockCurr = GetPrevBlockIndex(pBlockCurr->pprev, 0, true); // previous PoS block;
 
@@ -446,9 +450,11 @@ void FormatDataBuffer(CBlock *pblock, uint *pdata) {
     data.nNonce         = pblock->nNonce;
 
     if(fNeoScrypt) {
-        /* Copy the LE data */
+        /* cpuminer-opt (and other modern NeoScrypt miners) expect the 80-byte
+         * getwork header with big-endian words, like the scrypt path below. The
+         * original LE copy only matched old cpuminer-multi builds. */
         for(i = 0; i < 20; i++)
-          pdata[i] = ((uint *) &data)[i];
+          pdata[i] = ByteReverse(((uint *) &data)[i]);
     } else {
         /* Block header size in bits */
         pdata[31] = 640;

@@ -205,6 +205,7 @@ std::string HelpMessage()
     strUsage += "  -dns                   " + _("Allow DNS lookups for -addnode, -seednode and -connect") + "\n";
     strUsage += "  -port=<port>           " + _("Listen for connections on <port> (default: 30140)") + "\n";
     strUsage += "  -maxconnections=<n>    " + _("Maintain at most <n> connections to peers (default: 125)") + "\n";
+    strUsage += "  -maxinboundperip=<n>   " + _("Accept at most <n> inbound connections from one address, 0 = no limit (default: 4)") + "\n";
     strUsage += "  -addnode=<ip>          " + _("Add a node to connect to and attempt to keep the connection open") + "\n";
     strUsage += "  -connect=<ip>          " + _("Connect only to the specified node(s)") + "\n";
     strUsage += "  -seednode=<ip>         " + _("Connect to a node to retrieve peer addresses, and disconnect") + "\n";
@@ -389,6 +390,9 @@ bool AppInit2(boost::thread_group& threadGroup)
     if (!SelectParamsFromCommandLine()) {
         return InitError("Invalid combination of -testnet and -regtest.");
     }
+
+    nMaxConnections = GetArg("-maxconnections", 125);
+    nMaxInboundPerIP = GetArg("-maxinboundperip", 4);
 
     if (mapArgs.count("-bind")) {
         // when specifying an explicit binding address, you want to listen on it

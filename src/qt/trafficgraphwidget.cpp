@@ -2,6 +2,7 @@
 #include "clientmodel.h"
 
 #include <QPainter>
+#include <QPainterPath> // required explicitly since Qt 5.15
 #include <QColor>
 #include <QTimer>
 

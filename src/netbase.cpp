@@ -312,8 +312,14 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
     return true;
 }
 
+// thread_local: CheckNodeEx() reads this right after its own ConnectSocket() on the same thread,
+// so each thread must see only its own connect()'s errno (a plain global would race with the
+// outbound-connection threads that also call ConnectSocketDirectly()).
+thread_local int nLastConnectError = 0; // errno of the last failed connect(), used by CheckNodeEx()
+
 bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRet, int nTimeout)
 {
+    nLastConnectError = 0;
     hSocketRet = INVALID_SOCKET;
 
     struct sockaddr_storage sockaddr;
@@ -390,6 +396,7 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
             }
             if (nRet != 0)
             {
+                nLastConnectError = nRet;
                 LogPrintf("connect() to %s failed after select(): %s\n", addrConnect.ToString(), strerror(nRet));
                 closesocket(hSocket);
                 return false;
@@ -401,6 +408,7 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
         else
 #endif
         {
+            nLastConnectError = WSAGetLastError();
             LogPrintf("connect() to %s failed: %i\n", addrConnect.ToString(), WSAGetLastError());
             closesocket(hSocket);
             return false;

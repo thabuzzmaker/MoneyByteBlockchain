@@ -37,7 +37,7 @@
 using namespace std;
 using namespace boost;
 
-static const int MAX_OUTBOUND_CONNECTIONS = 150;
+static const int MAX_OUTBOUND_CONNECTIONS = 24;
 
 bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOutbound = NULL, const char *strDest = NULL, bool fOneShot = false);
 
@@ -57,7 +57,8 @@ uint64_t nLocalHostNonce = 0;
 static std::vector<SOCKET> vhListenSocket;
 CAddrMan addrman;
 std::string strSubVersion;
-int nMaxConnections = GetArg("-maxconnections", 125);
+int nMaxConnections = 125; // set from -maxconnections in AppInit2, once the config file has been read
+int nMaxInboundPerIP = 4;  // D3: -maxinboundperip, inbound connections accepted from one source address
 
 vector<CNode*> vNodes;
 CCriticalSection cs_vNodes;
@@ -356,6 +357,21 @@ CNode* FindNode(const CService& addr)
         if ((CService)pnode->addr == addr)
             return (pnode);
     return NULL;
+}
+
+// IPv6 reachability: 1 = port open, 0 = closed/unreachable, -1 = cannot be tested from this host
+// (no local address of that family: ENETUNREACH / EAFNOSUPPORT / EADDRNOTAVAIL).
+int CheckNodeEx(CAddress addrConnect)
+{
+    if (FindNode((CService)addrConnect)) return 1;
+    SOCKET hSocket;
+    if (ConnectSocket(addrConnect, hSocket)) { closesocket(hSocket); return 1; }
+#ifdef WIN32
+    if (nLastConnectError == WSAENETUNREACH || nLastConnectError == WSAEAFNOSUPPORT || nLastConnectError == WSAEADDRNOTAVAIL) return -1;
+#else
+    if (nLastConnectError == ENETUNREACH || nLastConnectError == EAFNOSUPPORT || nLastConnectError == EADDRNOTAVAIL) return -1;
+#endif
+    return 0;
 }
 
 bool CheckNode(CAddress addrConnect)
@@ -1144,6 +1160,7 @@ void ThreadSocketHandler()
             SOCKET hSocket = accept(hListenSocket, (struct sockaddr*)&sockaddr, &len);
             CAddress addr;
             int nInbound = 0;
+            int nInboundFromAddr = 0; // D3
 
             if (hSocket != INVALID_SOCKET)
                 if (!addr.SetSockAddr((const struct sockaddr*)&sockaddr))
@@ -1152,8 +1169,11 @@ void ThreadSocketHandler()
             {
                 LOCK(cs_vNodes);
                 BOOST_FOREACH(CNode* pnode, vNodes)
-                    if (pnode->fInbound)
+                    if (pnode->fInbound) {
                         nInbound++;
+                        if ((CNetAddr)pnode->addr == (CNetAddr)addr)
+                            nInboundFromAddr++;
+                    }
             }
             if (hSocket == INVALID_SOCKET)
             {
@@ -1168,6 +1188,13 @@ void ThreadSocketHandler()
             else if (CNode::IsBanned(addr))
             {
                 LogPrintf("connection from %s dropped (banned)\n", addr.ToString());
+                closesocket(hSocket);
+            }
+            else if (nMaxInboundPerIP > 0 && nInboundFromAddr >= nMaxInboundPerIP)
+            {
+                // D3: one peer must not be able to fill our inbound slots (1.3.0.5 wallets with a stale
+                // masternode=1 config open a new session to their external address every minute).
+                LogPrint("net", "connection from %s dropped (already %d inbound from that address)\n", addr.ToString(), nInboundFromAddr);
                 closesocket(hSocket);
             }
             else

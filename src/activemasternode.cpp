@@ -11,6 +11,15 @@
 //
 // Bootup the masternode, look for a 3000 MON input and register on the network
 //
+// Parse masternode addresses numerically first. CService(str, true) uses AI_ADDRCONFIG, which
+// rejects IPv6 literals on hosts without an IPv6 address (and vice versa), yielding [::]:0.
+static CService ParseMasternodeService(const std::string& str)
+{
+    CService svc(str, false);
+    if (!svc.IsValid()) svc = CService(str, true);
+    return svc;
+}
+
 void CActiveMasternode::ManageStatus()
 {
     std::string errorMessage;
@@ -40,13 +49,25 @@ void CActiveMasternode::ManageStatus()
                 return;
             }
         } else {
-        	service = CService(strMasterNodeAddr, true);
+        	service = ParseMasternodeService(strMasterNodeAddr);
         }
 
         LogPrintf("CActiveMasternode::ManageStatus() - Checking inbound connection to '%s'\n", service.ToString().c_str());
 
+            // Connecting to our own external address only succeeds behind hairpin NAT, so a failed
+            // self-connect does not prove the port is closed. If we already have an inbound peer,
+            // the outside world can reach our port - accept that as proof and skip the self-connect.
+            bool fHaveInbound = false;
+            {
+                LOCK(cs_vNodes);
+                for (std::vector<CNode*>::iterator it = vNodes.begin(); it != vNodes.end(); ++it)
+                    if ((*it)->fInbound) { fHaveInbound = true; break; }
+            }
 
-            if(!ConnectNode((CAddress)service, service.ToString().c_str())){
+            // D2: test the port with a plain TCP connect (CheckNodeEx) instead of ConnectNode(): the
+            // CNode that ConnectNode() returned was never released, so every ManageStatus() pass
+            // (once a minute) left one more live P2P session open to our own external address.
+            if(!fHaveInbound && CheckNodeEx((CAddress)service) != 1){
                 notCapableReason = "Perhaps using port=<coin-port> is needed, Could not connect to " + service.ToString();
                 status = MASTERNODE_NOT_CAPABLE;
                 LogPrintf("CActiveMasternode::ManageStatus() - not capable: %s\n", notCapableReason.c_str());
@@ -135,7 +156,7 @@ bool CActiveMasternode::StopMasterNode(std::string strService, std::string strKe
         LogPrintf("MasternodeStop::VinFound: %s\n", vin.ToString());
     }
 
-	return StopMasterNode(vin, CService(strService, true), keyMasternode, pubKeyMasternode, errorMessage);
+	return StopMasterNode(vin, ParseMasternodeService(strService), keyMasternode, pubKeyMasternode, errorMessage);
 }
 
 // Send stop dseep to network for main masternode
@@ -273,7 +294,7 @@ bool CActiveMasternode::Register(std::string strService, std::string strKeyMaste
         }
     }
 
-	return Register(vin, CService(strService, true), keyCollateralAddress, pubKeyCollateralAddress, keyMasternode, pubKeyMasternode, rewardAddress, rewardPercentage, errorMessage);
+	return Register(vin, ParseMasternodeService(strService), keyCollateralAddress, pubKeyCollateralAddress, keyMasternode, pubKeyMasternode, rewardAddress, rewardPercentage, errorMessage);
 }
 
 bool CActiveMasternode::Register(CTxIn vin, CService service, CKey keyCollateralAddress, CPubKey pubKeyCollateralAddress, CKey keyMasternode, CPubKey pubKeyMasternode, CScript rewardAddress, int rewardPercentage, std::string &retErrorMessage) {

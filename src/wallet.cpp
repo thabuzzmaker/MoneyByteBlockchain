@@ -1745,7 +1745,8 @@ void CWallet::AvailableCoinsMN(vector<COutput>& vCoins, bool fOnlyConfirmed, con
                 isminetype mine = IsMine(pcoin->vout[i]);
 
                 if (!(pcoin->IsSpent(i)) && mine != ISMINE_NO &&
-                    !IsLockedCoin((*it).first, i) && pcoin->vout[i].nValue > 0 &&
+                    (!IsLockedCoin((*it).first, i) || pcoin->vout[i].nValue == GetMNCollateral(pindexBest->nHeight)*COIN) && // mnconflock locks the collateral, but masternode start must still find it
+                    pcoin->vout[i].nValue > 0 &&
                     (!coinControl || !coinControl->HasSelected() || coinControl->IsSelected((*it).first, i)))
                         vCoins.push_back(COutput(pcoin, i, nDepth, (mine & ISMINE_SPENDABLE) != ISMINE_NO));
             }
